@@ -55,34 +55,8 @@ This project is a web application that generates poems based on user-provided pr
     pip install streamlit
     ```
 
-2. **Create `streamlit_app.py`** with the following content:
+2. **Create `streamlit_app.py`** with the given content
 
-    ```python
-    import streamlit as st
-    import requests
-
-    # Streamlit UI
-    st.title("Poem Generator")
-    st.write("Enter a prompt to generate a poem")
-
-    prompt = st.text_input("Prompt")
-
-    if st.button("Generate Poem"):
-        if prompt:
-            # Make a request to the Go backend
-            response = requests.post("http://localhost:8000/generate_poem", json={"prompt": prompt})
-            if response.status_code == 200:
-                poem = response.json().get("poem")
-                if poem:
-                    st.write("### Generated Poem")
-                    st.write(poem)
-                else:
-                    st.error("Poem generation failed, no content received.")
-            else:
-                st.error(f"Failed to generate poem, status code: {response.status_code}")
-        else:
-            st.error("Prompt cannot be empty")
-    ```
 
 3. **Run the Streamlit app**:
 

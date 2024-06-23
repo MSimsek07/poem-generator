@@ -10,7 +10,10 @@ prompt = st.text_input("Prompt")
 if st.button("Şiir Oluştur"):
     if prompt:
         # Make a request to the Go backend
+        st.write("Prompt: ", prompt)  # Prompt'i loglamak
         response = requests.post("http://localhost:8000/generate_poem", json={"prompt": prompt})
+        st.write("Response Status Code: ", response.status_code)  # Yanıt durumu loglama
+        st.write("Response Content: ", response.content)  # Yanıt içeriğini loglama
         if response.status_code == 200:
             poem = response.json().get("poem")
             if poem:

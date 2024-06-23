@@ -33,16 +33,29 @@ func getPoemFromOpenAI(prompt string, wg *sync.WaitGroup, ch chan<- string) {
 	defer wg.Done()
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
-	url := "https://api.openai.com/v1/chat/completions"
-	systemPrompt := "Sen yaratıcı ve yetenekli bir Türk şairisin. Türkçe şiir kurallarına ve şiir temsillerine uyduğunuzdan emin olun. Cevapların TÜRKÇE olmalıdır. Şiirler için öncelikle bir adet TÜRKÇE yaratıcı başlık da oluştur. Verilen girdiyi temel alarak güzel ve ilham verici TÜRKÇE bir şiir yaz:\n\n"
+	if apiKey == "" {
+		log.Println("OpenAI API key is missing")
+		ch <- ""
+		return
+	}
 
-	requestBody, _ := json.Marshal(map[string]interface{}{
+	url := "https://api.openai.com/v1/chat/completions"
+	systemPrompt := "Sen yaratıcı ve yetenekli bir Türk şairisin. Türkçe şiir kurallarına ve şiir temsillerine uyduğunuzdan emin olun. Cevapların TÜRKÇE olmalıdır. Şiirler için öncelikle bir adet TÜRKÇE yaratıcı başlık da oluştur. Mısra sonları için \\n kullan ve alt satıra geç. Verilen girdiyi ve talimatları temel alarak güzel ve ilham verici TÜRKÇE bir şiir yaz:\n\n"
+
+	requestBody, err := json.Marshal(map[string]interface{}{
 		"model": "gpt-3.5-turbo",
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
 			{"role": "user", "content": prompt},
 		},
 	})
+	if err != nil {
+		log.Println("Error marshaling request body:", err)
+		ch <- ""
+		return
+	}
+
+	log.Println("Request Body: ", string(requestBody))
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
 	if err != nil {
@@ -69,6 +82,9 @@ func getPoemFromOpenAI(prompt string, wg *sync.WaitGroup, ch chan<- string) {
 		return
 	}
 
+	// Log the full response body for debugging
+	log.Println("OpenAI response body:", string(body))
+
 	var response OpenAIResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		log.Println("OpenAI response parsing error:", err)
@@ -76,9 +92,10 @@ func getPoemFromOpenAI(prompt string, wg *sync.WaitGroup, ch chan<- string) {
 		return
 	}
 
-	if len(response.Choices) > 0 {
+	if len(response.Choices) > 0 && response.Choices[0].Message.Content != "" {
 		ch <- response.Choices[0].Message.Content
 	} else {
+		log.Println("No choices in OpenAI response or content is empty")
 		ch <- ""
 	}
 }
@@ -93,15 +110,13 @@ func generatePoemHandler(w http.ResponseWriter, r *http.Request) {
 
 	prompt := reqBody.Prompt
 	var wg sync.WaitGroup
-	poemCh := make(chan string, 4) // Create a buffered channel with capacity 4
+	poemCh := make(chan string, 1) // Create a buffered channel with capacity 1
+	defer close(poemCh)            // Ensure the channel is closed
 
 	wg.Add(1)
 	go getPoemFromOpenAI(prompt, &wg, poemCh)
 
-	// TODO: Add similar goroutines for Groq, HuggingFace, and Gemini
-
 	wg.Wait()
-	close(poemCh)
 
 	// Aggregate results (for simplicity, we'll take the first non-empty result)
 	var poem string
@@ -112,9 +127,18 @@ func generatePoemHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if poem == "" {
+		log.Println("No poem generated")
+		http.Error(w, "Failed to generate poem", http.StatusInternalServerError)
+		return
+	}
+
 	response := PoemResponse{Poem: poem}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Println("Error encoding response:", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 func main() {
